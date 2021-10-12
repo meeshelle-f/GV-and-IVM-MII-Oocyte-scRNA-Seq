@@ -1,0 +1,527 @@
+---
+title: "Pre-filtering methods"
+author: "Michelle"
+date: "9/17/2021"
+output: html_document
+---
+
+This DATA is NOT normalized. Input data frame of UMI counts, with columns representing individual cells and rows representing genes. Divide each gene count by the total sum of cell counts.
+
+```{r basic normalization, include=FALSE}
+
+DF <- read.csv("~/GitHub/scSeq/GSE158802/GV_merged_3", row.names=1)
+MATRIX=data.frame(DF[,7:41]) #use only the matrix count components 
+
+Sum_MATRIX=t(data.frame(colSums(MATRIX)))
+normalized=mapply(`/`, data.frame(MATRIX),Sum_MATRIX )
+
+MERGE=cbind(DF[,1:6],normalized) # bind normalized data back to categorical data
+colnames(MERGE)=colnames(DF)
+write.csv(MERGE,file="~/GitHub/scSeq/GSE158802/GV_normalized")
+
+```
+
+
+One way to analyze the spread of counts per cell is to use quartiles. HOWEVER THIS IS NOT an accurate method to analyze gene counts across all cells within a dataset! Here we can define quartiles by cell and place genes within each binned quartile. This could be especially useful for single cell gene analysis.
+
+```{r calculate quantiles per cell (column in matrices}
+
+DF <- read.csv("~/GitHub/scSeq/GSE158802/GV_normalized", row.names=1)
+
+n=nrow(DF) 
+temp=DF[,7:41] #use only the matrices of normalized GV data 
+
+gene=data.frame(matrix(ncol=0, nrow=1))
+
+  for (i in 1:ncol(temp)){
+    
+    Q=data.frame(quantile(temp[,i]))
+    Q=data.frame(head(Q))
+
+    gene=cbind(gene,Q)
+  }
+
+colnames(gene)=colnames(temp)
+
+write.csv(gene,file="~/GitHub/scSeq/GSE158802/Qs_GV")
+
+AVG_Q=data.frame(rowMeans(gene))
+
+write.csv(AVG_Q[-1,],file="~/GitHub/scSeq/GSE158802/AVG_Q_GV")
+
+
+```
+
+Now plot these quantiles somehow! 
+```{r}
+
+GV <- read.csv("~/GitHub/scSeq/GSE158802/GV_merged_3_normalized_9.14.21", row.names=1)
+
+b <- c(7, 2, 4, 3, -1, -2, 3, 3, 6, 8, 12, 7, 3)
+
+length(which(b < 7))
+
+Q1=length(which(matrix[2,] <= AVG_Q[2,])) #28
+Q2=length(which(matrix[2,] <= AVG_Q[3,]))-Q1 #3
+Q3=length(which(matrix[2,] <= AVG_Q[4,]))-(Q2+Q1) #2
+Q4=length(which(matrix[2,] <= AVG_Q[5,]))-(Q3+Q2+Q1) #2
+
+DF=data.frame(Q1,Q2,Q3,Q4)
+
+data_percentage <- t(apply(t(DF), 2, function(x){x*100/sum(x,na.rm=T)}))
+
+barplot(t(data_percentage))
+
+
+###############################################9/16/21
+#first pull by chromosome GV_merged_3_normalized_9.14
+group_names=c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22") #not including  X and Y... 
+
+group_names=c("1") 
+temp_1=GV_merged_3_normalized_9.14 
+gene=data.frame(matrix(ncol=1, nrow=0))
+
+  for(i in 1:length(group_names)){
+    
+    tXS=temp_1[(temp_1$chr== i),]
+    gene=rbind(gene,tXS)
+  
+DF=NULL
+}
+matrix_names=gene[,1:6]
+matrix=gene[,7:41]
+
+DF=NULL
+    for(j in 1:nrow(matrix)){
+      
+      Q1=length(which(matrix[j,] <= AVG_Q[2,])) #28
+      Q2=length(which(matrix[j,] <= AVG_Q[3,]))-(Q1) #3
+      Q3=length(which(matrix[j,] <= AVG_Q[4,]))-(Q2+Q1) #2
+      Q4=length(which(matrix[j,] <= AVG_Q[5,]))-(Q3+Q2+Q1) #2
+      
+      DF_1=data.frame(Q1,Q2,Q3,Q4)
+      data_percentage <- t(apply(t(DF_1), 2, function(x){x*100/sum(x,na.rm=T)}))
+      DF=rbind(DF,data_percentage)
+     }
+  
+  Qs_chr1=cbind(matrix_names,DF)
+  write.csv(Qs_chr1,file="~/GitHub/scSeq/GSE158802/Qs_chr1")
+  
+ 
+
+Qs_chr1 <- read.csv("~/GitHub/scSeq/GSE158802/Qs_chr1", row.names=1)
+
+GV_3_9.2 <- read.csv("~/GitHub/scSeq/GSE158802/GV_3_9.2.21", row.names=1) #from running Gviz before... let's see what merges first!! 
+
+dim(Qs_chr1) #[1] [1] 1526   10
+
+MERGE=merge(GV_3_9.2, Qs_chr1, by.x = "gene.symbol", by.y= "gene.name", all.x=FALSE)
+dim(MERGE) #[1] 1404   13
+1526-1404 #122  
+122/1526 #0.07994758 or 8% data lost. 
+
+write.csv(MERGE,file="~/GitHub/scSeq/GSE158802/Qs_chr1_genomic_ranges")
+
+forplot=data.frame(MERGE$start.range, MERGE[,10:13])
+row.names(forplot)=make.names(MERGE$hgnc_symbol,unique=TRUE)
+
+X=forplot[order(forplot$MERGE.start.range),]
+Y=X[1:10,-1]
+library(RColorBrewer)
+coul <- brewer.pal(3, "Pastel2") 
+
+barplot(t(Y),col=coul,  xlab="chr1",las=2,cex.names=.25, main="Green=Q1, Orange=Q2, Purple=Q3")
+
+#if Q1 is larger than Q2-4, remove that gene from the set. 
+
+one=data.frame(MERGE$start.range, MERGE[,10:13])
+row.names(one)=make.names(MERGE$hgnc_symbol,unique=TRUE)
+two=one[order(one$MERGE.start.range),]
+
+alter=data.frame(rowSums(two[,3:5]))
+
+hello=two[!((two$Q1)>alter$rowSums.two...3.5..),]
+
+Y=hello[1:100,-1]
+barplot(t(Y),col=coul,  xlab="chr1",las=2,cex.names=1, main="Green=Q1, Orange=Q2, Purple=Q3")
+
+write.csv(Y,file="~/GitHub/scSeq/GSE158802/RM_Q1_CHR 1")
+
+
+```
+
+```{r,use loop for ggman plots with cell names}
+Sorted_Z_scores <- read.csv("~/GitHub/scSeq/GSE158802/Sorted_Z_scores.9.27.21", row.names=1)
+
+library(stringr)
+install.packages("remotes")
+remotes::install_github("veera-dr/ggman")
+library(ggman)
+
+temp1=data.frame(Sorted_Z_scores$hgnc_symbol,Sorted_Z_scores$chr,Sorted_Z_scores$start.range)
+colnames(temp1)=c("SNP","CHR","BP")
+temp1=cbind(temp1,Sorted_Z_scores[,7:41])
+matrix=temp1[,4:38]
+DF=NULL
+
+for(j in 1:ncol(matrix)){
+  temp=cbind(temp1[,1:3],matrix[,j])
+  temp=data.frame(temp)
+  colnames(temp)=c("SNP","CHR","BP","P")
+  title_name=paste("Cell ",colnames(matrix[j]))
+
+print(ggman(temp, snp = "SNP", bp = "BP", chrom = "CHR", pvalue = "P",
+   lineColour = "red", pointSize = 0.1, ymin = -3,
+  ymax = 6, logTransform = FALSE, invert = FALSE,
+ relative.positions = FALSE, xlabel = "chromosome",
+  ylabel = "Z score", title = title_name,
+  legend.title = "legend", clumps.label.type = "label"))
+}
+
+
+```
+
+
+
+
+9/29/21 
+ACTION 1: Pull normalized data, GV_Stats contains the FC for the genes in bins 4-5 for all cells. 
+Create Mock_P3432_193_chr8_21 and Mock_P3432_196_chr8_21
+```{r, pull GV_Stats}
+
+GV_Stats <- read.csv("~/GitHub/scSeq/GSE158802/GV_Stats", row.names=1)
+
+# pull 2 cells' FC data
+P3432_193=data.frame(cbind(GV_Stats[,1:2],GV_Stats$P3432_193))
+P3432_196=data.frame(cbind(GV_Stats[,1:2],GV_Stats$P3432_196))
+
+# attach important data 
+temp= norm.data.9.23 <- read.csv("~/GitHub/scSeq/GSE158802/norm.data.9.27.21", row.names=1)
+
+
+
+
+############################# PART 1 for cell l
+Mock_P3432_193_chr8_21=data.frame(cbind(temp$chr, temp$hgnc_symbol , temp$start.range, P3432_193))
+names(Mock_P3432_193_chr8_21)=c("CHR","SNP","BP","MEAN", "VARIANCE","FC P3432_193")
+chr8=Mock_P3432_193_chr8_21[Mock_P3432_193_chr8_21$CHR==8,] #244
+chr21=Mock_P3432_193_chr8_21[Mock_P3432_193_chr8_21$CHR==21,] #244
+
+
+chr8_1.5= data.frame(as.numeric(chr8$`FC P3432_193`) *1.5)
+chr8_1.5=cbind(chr8[,-4],chr8_1.5)
+names(chr8_1.5)= names(Mock_P3432_193_chr8_21)
+
+one=Mock_P3432_193_chr8_21[!(Mock_P3432_193_chr8_21$CHR==8),]
+two=one[!(one$CHR==21),]
+
+chr21_1.5= data.frame(as.numeric(chr21$`FC P3432_193`) *1.5)
+chr21_1.5=cbind(chr21[,-4],chr21_1.5)
+names(chr21_1.5)= names(Mock_P3432_193_chr8_21)
+
+Mock_P3432_193_chr8_21=rbind(two, chr8_1.5,chr21_1.5)
+
+#repeat code above for cell 2 ####################
+
+# attach important data, including mean and variance!!! 
+temp= norm.data.9.23 <- read.csv("~/GitHub/scSeq/GSE158802/norm.data.9.27.21", row.names=1)
+
+Mock_P3432_196_chr8_21=data.frame(cbind(temp$chr, temp$hgnc_symbol , temp$start.range, P3432_196))
+names(Mock_P3432_196_chr8_21)=c("CHR","SNP","BP","MEAN", "VARIANCE","FC P3432_196")
+chr8=Mock_P3432_196_chr8_21[Mock_P3432_196_chr8_21$CHR==8,] #244
+chr21=Mock_P3432_196_chr8_21[Mock_P3432_196_chr8_21$CHR==21,] #244
+
+
+chr8_1.5= data.frame(as.numeric(chr8$`FC P3432_196`) *1.5)
+chr8_1.5=cbind(chr8[,-4],chr8_1.5)
+names(chr8_1.5)= names(Mock_P3432_196_chr8_21)
+
+one=Mock_P3432_196_chr8_21[!(Mock_P3432_196_chr8_21$CHR==8),]
+two=one[!(one$CHR==21),]
+
+chr21_1.5= data.frame(as.numeric(chr21$`FC P3432_196`) *1.5)
+chr21_1.5=cbind(chr21[,-4],chr21_1.5)
+names(chr21_1.5)= names(Mock_P3432_196_chr8_21)
+
+Mock_P3432_196_chr8_21=rbind(two, chr8_1.5,chr21_1.5)
+
+write.csv(Mock_P3432_193_chr8_21,file="~/GitHub/scSeq/GSE158802/Mock_P3432_193_chr8_21" )
+write.csv(Mock_P3432_196_chr8_21,file="~/GitHub/scSeq/GSE158802/Mock_P3432_196_chr8_21"  )
+```
+
+ACTION 2: Calcualte Z scores for both Mock_P3432_193_chr8_21 and Mock_P3432_196_chr8_21
+
+
+```{R, calculate gene means variance and fold change create GV_Stats and Zscore_GV_9,eval=FALSE, echo=FALSE}
+
+GV_Stats <- read.csv("~/GitHub/scSeq/GSE158802/GV_Stats", row.names=1)
+temp= norm.data.9.27 <- read.csv("~/GitHub/scSeq/GSE158802/norm.data.9.27.21", row.names=1)
+
+GV_Stats= data.frame(cbind(temp$hgnc_symbol,GV_Stats))
+
+Mock_P3432_193_chr8_21 <- read.csv("~/GitHub/scSeq/GSE158802/Mock_P3432_193_chr8_21", row.names=1)
+
+Mock_P3432_196_chr8_21 <- read.csv("~/GitHub/scSeq/GSE158802/Mock_P3432_196_chr8_21", row.names=1)
+
+merge=data.frame(cbind(Mock_P3432_193_chr8_21$SNP,Mock_P3432_193_chr8_21$BP ,Mock_P3432_193_chr8_21$CHR, Mock_P3432_193_chr8_21$FC.P3432_193,Mock_P3432_196_chr8_21$FC.P3432_196))
+
+names(merge)=c("SNP","BP","CHR","Mock_P3432_193_chr8_21","Mock_P3432_196_chr8_21")
+
+dim(GV_Stats)#[1] 5769   38
+dim(merge)#[1] 5769    5
+MERGE=merge(GV_Stats, merge, by.x = "temp.hgnc_symbol", by.y= "SNP", all.y=TRUE)
+
+
+BP=MERGE$BP
+CHR=MERGE$CHR
+MERGE=MERGE[,-39]
+MERGE=MERGE[,-39]
+
+MERGE=cbind(BP,CHR,MERGE)
+
+write.csv(MERGE,file="~/GitHub/scSeq/GSE158802/MERGED_MOCK_9.29")
+
+```
+#################
+
+```{R, use MERGED_MOCK}
+
+MERGED_MOCK_9 <- read.csv("~/GitHub/scSeq/GSE158802/MERGED_MOCK_9.29", row.names=1)
+
+library(matrixStats)
+n=nrow(MERGED_MOCK_9)
+temp=MERGED_MOCK_9[,6:42]
+mean_genes=data.frame(rowSums(temp)/ncol(temp))
+std_genes=data.frame(sqrt(rowVars(as.matrix(temp))))
+
+
+gene=data.frame(matrix(ncol=0, nrow=n))
+
+  for (i in 1:ncol(temp)){
+    
+    tXS= data.frame((temp[,i]- mean_genes)/std_genes)
+
+     #  output should be singular column representing FC for each and all genes in cell
+     #  cbind this to GENES_means_dets within "FC"
+    
+row.names(gene)=rownames(mean_genes)
+
+gene=cbind(gene,tXS)
+    }
+
+Zscore_GV=gene
+names(Zscore_GV)=names(temp)
+
+Zscore_GV=cbind(MERGED_MOCK_9[,1:5],Zscore_GV)
+
+write.csv(Zscore_GV,file="~/GitHub/scSeq/GSE158802/Zscore_GV_9.29")
+
+
+```
+
+wrote Zscore_GV_9.29.21, which contains the 2 mock cells with newly calculated Z scores among all other 35 cells. 
+
+```{r,use loop for ggman plots with cell names}
+Zscore_GV_9 <- read.csv("~/GitHub/scSeq/GSE158802/Zscore_GV_9.29", row.names=1)
+
+library(stringr)
+library(ggman)
+
+
+temp1=data.frame(Zscore_GV_9$temp.hgnc_symbol,Zscore_GV_9$CHR, Zscore_GV_9$BP)
+colnames(temp1)=c("SNP","CHR","BP")
+temp1=cbind(temp1,Zscore_GV_9[,6:42])
+
+X= temp1[temp1$CHR=="X",]
+temp1= temp1[!(temp1$CHR=="X"),]
+X$CHR=23
+
+temp1=rbind(temp1,X)
+    
+
+############
+group_names=c("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20","21","22","23")# 23 is X  
+
+gene=data.frame(matrix(ncol=1, nrow=0))
+
+  for(i in 1:length(group_names)){
+    
+    tXS=temp1[(temp1$CHR== i),] 
+    
+    tXS=tXS[order(tXS$BP),]
+
+
+gene=rbind(gene,tXS)
+  }
+
+temp1=gene
+
+write.csv(temp1,file="~/GitHub/scSeq/GSE158802/temp1_10.1")
+
+```
+
+
+```{R, upload temp1 and create matrix}
+
+
+temp1<- read.csv("~/GitHub/scSeq/GSE158802/temp1_10.1", row.names=1)
+
+   matrix=temp1[,4:40]
+   range(matrix) #[1] -3.798071  5.905133
+
+DF=NULL
+
+for(j in 1:ncol(matrix)){
+  temp=cbind(temp1[,1:3],matrix[,j])
+  temp=data.frame(temp)
+  colnames(temp)=c("SNP","CHR","BP","P")
+  title_name=paste("Cell ",colnames(matrix[j]))
+
+print(ggman(temp, snp = "SNP", bp = "BP", chrom = "CHR", pvalue = "P", lineColour = "red", pointSize = 0.1, ymin = -4,
+  ymax = 6, logTransform = FALSE, invert = FALSE,
+ relative.positions = FALSE, xlabel = "chromosome",
+  ylabel = "Z score", title = title_name ,legend.title = "legend", 
+ clumps.label.type = "label"))
+
+}
+
+
+```
+
+
+
+
+```{r t test in R to prove}
+
+P3432_193=data.frame(cbind(Zscore_GV_9$CHR, Zscore_GV_9$P3432_193))
+chr8=P3432_193[P3432_193$X1==8,]
+
+P3432_193_MOCK=data.frame(cbind(Zscore_GV_9$CHR, Zscore_GV_9$Mock_P3432_193_chr8_21))
+chr8_MOCK=P3432_193_MOCK[P3432_193_MOCK$X1==8,]
+
+t.test(as.numeric(chr8$X2),as.numeric(chr8_MOCK$X2))
+#p-value = 2.508e-14
+
+P3432_196=data.frame(cbind(Zscore_GV_9$CHR, Zscore_GV_9$P3432_196))
+chr8_196=P3432_196[P3432_196$X1==8,]
+
+t.test(as.numeric(chr8_196$X2),as.numeric(chr8$X2))
+#p-value = 0.002819
+
+
+
+
+
+```
+
+
+
+
+```{r PCA testing}
+
+pca(t(as.matrix(Median$P3432_193)),text=rownames(Median), textlabelsize = 5)
+
+pca(t(as.matrix(Median$P3432_196)),text=rownames(Median), textlabelsize = 5)
+
+#calculate the difference of all medians.... 
+chr1=Median[1,]-Median[2,]
+plot(as.matrix(t(chr1)))
+mean_chr1=mean(as.matrix(chr1))
+
+o=order(chr1,decreasing=T)
+chr1[,o]
+#P3432_231 and P3432_246 are considered outliers 
+B=as.matrix(t(chr1))
+boxplot(B)
+boxplot.stats(B)
+C=boxplot.stats(B)
+length(C$out) #2 outliers 
+C$out[1]
+
+install.packages("car")
+library(car)
+Boxplot(B)
+
+```
+
+```{r loop median code}
+Median <- read.csv("~/GitHub/scSeq/GSE158802/Median_10.9.21", row.names=1)
+
+install.packages("car")
+library(car)
+
+#remove non doubles from data 
+
+M=subset(Median, rownames(Median) %in% c("13 q", "14 q","15 q", "21 q", "22 q"))
+
+chr=Median[!rownames(Median)%in%rownames(M),]
+U=c(1,3,5,7,9,11,13,15,17,19,21,23,25,27, 29,31,33,35)
+gene=data.frame(matrix(ncol=1, nrow=0))
+for(i in 1:length(U)){
+
+chr1=chr[U[i],]-chr[U[i]+1,]
+gene=rbind(gene,chr1)
+}
+rownames(gene)=c(1,2,3,4,5,6,7,8,9,10,11,12,16,17,18,19,20,"X")
+names(gene)=1:37
+
+#chr8=Median[15,]-Median[16,]
+#b=(t(chr8))
+#b=round(b, digits=4)
+#Boxplot(b,cex=.2)
+
+B=(t(gene))
+B=round(B, digits=4)
+
+Boxplot(B,cex=.2)
+boxplot.stats(B)
+C=boxplot.stats(B) #or out=boxplot.stats(B)$out
+length(C$out) #23 outliers 
+#C$out[1:23]
+
+ gene=data.frame(matrix(ncol=1, nrow=0))
+for(j in 1:length(C$out)){
+ matrix= which(B == C$out[j],arr.ind=TRUE)
+gene=rbind(gene,matrix)
+} 
+names(gene)=c("cell","chromosome")
+STATS=gene
+
+gene=data.frame(matrix(ncol=1, nrow=0))
+for(j in 1:length(STATS$chromosome)){
+ K= STATS$chromosome[j]
+ matrix= colnames(B)[K]
+gene=rbind(gene,matrix)
+} 
+
+STATS=cbind(STATS$cell,gene)
+names(STATS)=c("cell","Chr")
+
+STATS=STATS[order(STATS$cell,decreasing=FALSE),]
+ GENE.TEST=STATS[,1]
+
+A=unique(GENE.TEST)
+
+library(plyr)
+
+gene=data.frame(matrix(ncol=1, nrow=0))
+for(k in 1:length(A)){
+count.chosens.per.column <- ldply(GENE.TEST, function(c) sum(c==A[k]))
+S=sum(count.chosens.per.column$V1)
+gene=rbind(gene,S)
+}
+rownames(gene)=A
+names(gene)=c("freq")
+```
+
+
+
+
+
+
+
+
+
+
+
+
